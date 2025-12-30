@@ -405,7 +405,7 @@ const reconcileAndGenerateOutput = (
         'Articolo', 
         'Descrizione', 
         'Descrizione secondaria', 
-        'Quantità', 
+        'QUANTITA', 
         'Prezzo', 
         'Sconto', 
         'Prezzo Totale', 
@@ -489,7 +489,7 @@ const reconcileAndGenerateOutput = (
         // --- FORMULA GENERATION ---
         const qtyColLetter = 'D';
         const priceColLetter = 'E';
-        const discountColLetter = 'F'; // Was 'G', shifted due to PriceFlag removal
+        const discountColLetter = 'F'; 
 
         const qtyCell = `${qtyColLetter}${excelRowIndex}`;
         const priceCell = `${priceColLetter}${excelRowIndex}`;
@@ -501,14 +501,14 @@ const reconcileAndGenerateOutput = (
         const secondaryDescription = [descriptionPart, flagPart].filter(Boolean).join(' | ');
 
         const newRow: any[] = [
-            originalDbRow[dbColIndices.code], // Articolo
-            dbDescription,                     // Descrizione
-            secondaryDescription || null,      // Descrizione secondaria
-            a3Update.qty,                      // Quantità
-            a3Update.listPrice,                // Prezzo
-            a3Update.discount !== 0 ? a3Update.discount : null, // Sconto
-            { f: rowTotalFormula },            // Prezzo Totale
-            commessa ?? null                   // Commessa
+            originalDbRow[dbColIndices.code], // Articolo (Index 0)
+            dbDescription,                     // Descrizione (Index 1)
+            secondaryDescription || null,      // Descrizione secondaria (Index 2)
+            a3Update.qty,                      // Quantità (Index 3)
+            a3Update.listPrice,                // Prezzo (Index 4)
+            a3Update.discount !== 0 ? a3Update.discount : null, // Sconto (Index 5)
+            { f: rowTotalFormula },            // Prezzo Totale (Index 6)
+            commessa ?? null                   // Commessa (Index 7)
         ];
         
         outputDataAoA.push(newRow);
@@ -622,8 +622,47 @@ export const processFiles = async (
   const dbColIndices = findDbHeaders(dbDataAoA);
   const { outputDataAoA, unprocessedDbRows, ...updateStats } = reconcileAndGenerateOutput(dbDataAoA, dbColIndices, a3Updates, commessa);
   
-  // --- 5. Generate Output File ---
+  // --- 5. Generate Output File and Format Cells ---
   const newSheet = XLSX.utils.aoa_to_sheet(outputDataAoA);
+  
+  // Explicit cell formatting logic
+  const range = XLSX.utils.decode_range(newSheet['!ref']!);
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const cell_address = { c: C, r: R };
+      const cell_ref = XLSX.utils.encode_cell(cell_address);
+      const cell = newSheet[cell_ref];
+      if (!cell) continue;
+
+      // Header row formatting (optional, but keep it as text)
+      if (R === 0) {
+        cell.t = 's';
+        cell.z = '@';
+        continue;
+      }
+
+      // Column mapping based on finalOutputHeaders:
+      // 0: Articolo, 1: Descrizione, 2: Descrizione secondaria, 3: QUANTITA, 4: Prezzo, 5: Sconto, 6: Prezzo Totale, 7: Commessa
+      const isTextColumn = [0, 1, 2, 7].includes(C);
+      
+      if (isTextColumn) {
+        cell.t = 's'; // string type
+        cell.z = '@'; // explicit text format
+      } else {
+        // Numeric column
+        if (!cell.f) { // If it's not a formula
+          const val = parseFloat(cell.v);
+          if (!isNaN(val)) {
+            cell.v = val;
+            cell.t = 'n'; // number type
+          }
+        } else {
+          cell.t = 'n'; // formula result is numeric
+        }
+      }
+    }
+  }
+
   const newWorkbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(newWorkbook, newSheet, dbSheetName);
   const updatedFileBuffer = XLSX.write(newWorkbook, { bookType: 'xlsx', type: 'array' });
@@ -632,15 +671,12 @@ export const processFiles = async (
   const fallbackMode: 'enabled' | 'disabled' = 'disabled';
   
   const assunzioni = [
-      "Fedeltà ai Dati: Il 'Prezzo' (di listino), la 'Quantità' e lo 'Sconto' dell'output sono presi o calcolati direttamente dal file A3.",
-      "Identificazione Flag (LUMPSUM/INCLUDED): La logica non si basa più sulla ricerca di parole chiave, ma sulla relazione tra prezzo e quantità:",
-      "  - Una riga è 'LUMPSUM' se ha un prezzo unitario ma nessuna quantità. In questo caso, la quantità in output è 1, e il prezzo di listino e lo sconto sono calcolati come per una riga normale.",
-      "  - Una riga è 'INCLUDED' se non ha un prezzo unitario. Queste righe vengono conteggiate nel riepilogo ma sono escluse dal file di output finale.",
-      "Riconoscimento Strikethrough Avanzato: Una riga viene ignorata se una delle sue celle chiave (Codice, Descrizione, Q.tà, Prezzo) è barrata. La detezione supporta: barrato su cella intera, barrato parziale (rich text), e celle unite (merged cells). La formattazione condizionale che applica il barrato potrebbe non essere rilevata.",
-      "Calcolo Sconto: La colonna 'Sconto' è calcolata dalla differenza tra 'Unit Price' e 'Discounted Unit Price' del file A3 e espressa come percentuale negativa (es. -10 per 10%).",
-      "Struttura Colonne Output: Il file di output generato ha una struttura fissa: Articolo, Descrizione, Descrizione secondaria, Quantità, Prezzo, Sconto, Prezzo Totale, Commessa.",
-      "Calcolo Prezzo Totale con Formula: La colonna 'Prezzo Totale' in ogni riga è calcolata tramite una formula Excel (=ROUND(D_ * E_ * (1 + F_/100), 2)), rendendola dinamica a eventuali modifiche.",
-      "Descrizione Secondaria: La colonna 'Descrizione secondaria' viene usata per indicare se una riga è stata trattata come 'LUMPSUM', e per riportare la descrizione A3 se differisce da quella del database.",
+      "Fedeltà ai Dati: Il 'Prezzo' (di listino), la 'QUANTITA' e lo 'Sconto' dell'output sono presi o calcolati direttamente dal file A3.",
+      "Identificazione Flag (LUMPSUM/INCLUDED): La logica non si basa più sulla ricerca di parole chiave, ma sulla relazione tra prezzo e quantità.",
+      "Formattazione Celle: Le colonne 'Articolo', 'Descrizione', 'Descrizione secondaria' e 'Commessa' sono formattate esplicitamente come Testo. Le colonne 'QUANTITA', 'Prezzo', 'Sconto' e 'Prezzo Totale' sono formattate come Numero.",
+      "Riconoscimento Strikethrough Avanzato: Una riga viene ignorata se una delle sue celle chiave (Codice, Descrizione, Q.tà, Prezzo) è barrata. La detezione supporta: barrato su cella intera, barrato parziale (rich text), e celle unite (merged cells).",
+      "Calcolo Sconto: La colonna 'Sconto' è calcolata dalla differenza tra 'Unit Price' e 'Discounted Unit Price' del file A3 e espressa come percentuale negativa.",
+      "Calcolo Prezzo Totale con Formula: La colonna 'Prezzo Totale' in ogni riga è calcolata tramite una formula Excel dinamica.",
       "I valori segnaposto (es. 9999999) e le celle vuote o testuali in campi numerici sono stati convertiti a 0.",
       "Output Filtrato: L'output contiene solo le righe con codici presenti in entrambi i file, escludendo quelle identificate come 'INCLUDED'.",
     ];
