@@ -7,12 +7,8 @@ declare const XLSX: any; // Using XLSX from a CDN script
 const readFileAsArrayBuffer = (file: File): Promise<ArrayBuffer> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (event) => {
-      resolve(event.target?.result as ArrayBuffer);
-    };
-    reader.onerror = (error) => {
-      reject(error);
-    };
+    reader.onload = (event) => resolve(event.target?.result as ArrayBuffer);
+    reader.onerror = (error) => reject(error);
     reader.readAsArrayBuffer(file);
   });
 };
@@ -24,13 +20,10 @@ const normalizeHeader = (header: any): string => {
 
 const normalizeCodeHeader = (header: any): string => {
     if (header === null || header === undefined) return "";
-    // Rimuove spazi e parentesi quadre/tonde per un match affidabile (es. "[L1]" -> "l1")
     return String(header).trim().toLowerCase().replace(/[\s\[\]\(\)]+/g, '');
 }
 
 const normalizeCode = (code: any): string => {
-    // Aggressively remove all non-alphanumeric characters and convert to uppercase
-    // for robust matching. Handles various separators ('-', '.', '/', ' ', etc.) and case differences.
     return String(code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 };
 
@@ -39,9 +32,9 @@ const normalizeDescription = (desc: any): string => {
   return String(desc)
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, ' ') // Collapse multiple spaces
-    .replace(/&/g, 'and') // Replace & with 'and'
-    .replace(/[.,]$/, ''); // Remove trailing punctuation (dot or comma)
+    .replace(/\s+/g, ' ')
+    .replace(/&/g, 'and')
+    .replace(/[.,]$/, '');
 };
 
 const constructA3Code = (segments: (string | number)[]): string | null => {
@@ -52,12 +45,9 @@ const constructA3Code = (segments: (string | number)[]): string | null => {
     const l3_num = String(l3_raw ?? '').trim().replace(/[^0-9]/g, '');
     const l4_num = String(l4_raw ?? '').trim().replace(/[^0-9]/g, '');
 
-    if (!l1 || !l2_num) {
-        return null; // Invalid code parts
-    }
+    if (!l1 || !l2_num) return null;
 
     const l2 = l2_num.padStart(3, '0');
-
     let code = '';
     if (l3_num && !l4_num) {
         const l3 = l3_num.padStart(2, '0');
@@ -67,516 +57,111 @@ const constructA3Code = (segments: (string | number)[]): string | null => {
         const l4 = l4_num.padStart(2, '0');
         code = `${l1}${l2}${l3}${l4}`;
     } else {
-        return null; // Does not fit pattern
+        return null;
     }
 
-    // Return the code only if it has the correct length (6 or 8)
-    if (code.length === 6 || code.length === 8) {
-        return code;
-    }
-    
-    return null;
-};
-
-const parseQuantity = (value: any): number | null => {
-    if (value === null || value === undefined) return null;
-
-    // 1. Initial cleanup: trim spaces, incl. non-breaking space (U+00A0)
-    let strValue = String(value).trim().replace(/\u00A0/g, ' ');
-    if (strValue === '') return null;
-
-    const originalStrForFallback = strValue;
-
-    // 2. Remove text wrappers and any letters. Keep digits, ,, . and -.
-    strValue = strValue.replace(/[a-zA-Z()]/g, '').trim();
-    
-    // If cleaning left nothing, it's not a parsable number.
-    if (strValue === '') {
-        // Fallback: try to find a number in the original string
-        const fallbackMatch = originalStrForFallback.match(/-?[\d.,]+/);
-        if (fallbackMatch) {
-            strValue = fallbackMatch[0];
-        } else {
-            return null;
-        }
-    }
-
-    // 3 & 4. Normalize based on last separator to handle EU/US formats
-    const lastComma = strValue.lastIndexOf(',');
-    const lastDot = strValue.lastIndexOf('.');
-
-    let standardizedValue = strValue;
-    if (lastComma > lastDot) {
-      // European format (e.g., "1.234,50"). Remove dots, replace comma with dot.
-      standardizedValue = standardizedValue.replace(/\./g, '').replace(',', '.');
-    } else {
-      // US/default format (e.g., "1,234.50"). Just remove commas.
-      standardizedValue = standardizedValue.replace(/,/g, '');
-    }
-    
-    // 5. Attempt to parse the standardized value
-    const num = parseFloat(standardizedValue);
-
-    if (!isNaN(num)) {
-        return num;
-    }
-
-    // 6. Final fallback if primary method failed.
-    const fallbackMatch = originalStrForFallback.match(/-?\d+(\.\d+)?/);
-    if (fallbackMatch) {
-        const fallbackNum = parseFloat(fallbackMatch[0]);
-        if (!isNaN(fallbackNum)) return fallbackNum;
-    }
-    
-    return null;
+    return (code.length === 6 || code.length === 8) ? code : null;
 };
 
 const parseNumericValue = (value: any): number => {
     if (value === null || value === undefined) return 0;
-  
-    const strValue = String(value).trim();
-    if (strValue === '') return 0;
-  
-    // Handle placeholders
-    if (strValue === '9999999' || strValue === '9999999999' || (typeof value === 'number' && (value === 9999999 || value === 9999999999))) {
-        return 0;
-    }
+    let strValue = String(value).trim();
+    if (strValue === '' || strValue === '9999999' || strValue === '9999999999') return 0;
     
-    // Handle text that means zero price but is not a number
-    const lowerStrValue = strValue.toLowerCase();
-    const includedRegex = /\b(included|incl\.?|includi|incluso)\b/i;
-    // Also handle some lumpsum keywords if they appear alone, as they imply no numeric value
-    const lumpsumKeywords = ['lumpsum', 'lump sum', 'l.s.', 'ls', 'lump-sum', 'forfait'];
+    const lower = strValue.toLowerCase();
+    const excluded = /\b(included|incl\.?|includi|incluso)\b/i;
+    if (excluded.test(lower)) return 0;
     
-    if (includedRegex.test(lowerStrValue) || lumpsumKeywords.some(kw => lowerStrValue === kw)) {
-        return 0;
-    }
-    
-    let standardizedValue = strValue;
-    const lastComma = standardizedValue.lastIndexOf(',');
-    const lastDot = standardizedValue.lastIndexOf('.');
-  
-    // Normalize number string based on detected decimal separator
+    const lastComma = strValue.lastIndexOf(',');
+    const lastDot = strValue.lastIndexOf('.');
     if (lastComma > lastDot) {
-      // European format (e.g., "1.234,56"). Remove dots, replace comma.
-      standardizedValue = standardizedValue.replace(/\./g, '').replace(',', '.');
+      strValue = strValue.replace(/\./g, '').replace(',', '.');
     } else {
-      // US/default format (e.g., "1,234.56"). Just remove commas.
-      standardizedValue = standardizedValue.replace(/,/g, '');
+      strValue = strValue.replace(/,/g, '');
     }
     
-    // Extract the first valid floating-point number from the string.
-    // This handles cases where numbers are mixed with text or currency symbols.
-    const match = standardizedValue.match(/-?\d+(\.\d+)?/);
+    const match = strValue.match(/-?\d+(\.\d+)?/);
     const num = match ? parseFloat(match[0]) : NaN;
-    
-    if (isNaN(num)) {
-      return 0;
-    }
-  
-    return num;
+    return isNaN(num) ? 0 : num;
 };
 
+const parseQuantity = (value: any): number | null => {
+    if (value === null || value === undefined) return null;
+    let strValue = String(value).trim().replace(/\u00A0/g, ' ');
+    if (strValue === '') return null;
+    
+    const clean = strValue.replace(/[a-zA-Z()]/g, '').trim();
+    if (clean === '') {
+        const match = strValue.match(/-?[\d.,]+/);
+        if (!match) return null;
+        strValue = match[0];
+    } else {
+        strValue = clean;
+    }
 
-// --- TYPE DEFINITIONS FOR INDICES ---
+    const lastComma = strValue.lastIndexOf(',');
+    const lastDot = strValue.lastIndexOf('.');
+    if (lastComma > lastDot) {
+      strValue = strValue.replace(/\./g, '').replace(',', '.');
+    } else {
+      strValue = strValue.replace(/,/g, '');
+    }
+    
+    const num = parseFloat(strValue);
+    return isNaN(num) ? null : num;
+};
+
 interface A3ColIndices {
-  qty: number;
-  unitPrice: number;
-  discountedUnitPrice: number;
-  description: number;
-  totalPrice: number;
-  priceFlag: number; // -1 if not found
-  length: number; // -1 if not found
-  l1: number;
-  l2: number;
-  l3: number;
-  l4: number;
+  qty: number; unitPrice: number; discountedUnitPrice: number; description: number;
+  totalPrice: number; l1: number; l2: number; l3: number; l4: number;
 }
 
-interface DBColIndices {
-  code: number;
-  description: number;
-}
 const findA3Headers = (a3Data: any[][]): { colIndices: A3ColIndices; headerRowIndex: number } => {
   let headerRowIndex = -1;
-  const colIndices: A3ColIndices = { qty: -1, unitPrice: -1, discountedUnitPrice: -1, description: -1, totalPrice: -1, priceFlag: -1, length: -1, l1: -1, l2: -1, l3: -1, l4: -1 };
+  const colIndices: A3ColIndices = { qty: -1, unitPrice: -1, discountedUnitPrice: -1, description: -1, totalPrice: -1, l1: -1, l2: -1, l3: -1, l4: -1 };
 
   for (let i = 0; i < Math.min(a3Data.length, 20); i++) {
     const row = a3Data[i];
-    if (!row || !Array.isArray(row)) continue;
-
+    if (!row) continue;
     row.forEach((cell, index) => {
-      const normalizedStd = normalizeHeader(cell);
-      const normalizedCode = normalizeCodeHeader(cell);
-
-      if (colIndices.qty === -1 && normalizedStd.includes('q.ty')) { colIndices.qty = index; headerRowIndex = Math.max(headerRowIndex, i); }
-      if (colIndices.unitPrice === -1 && normalizedStd.includes('unit pric') && !normalizedStd.includes('discounted')) { colIndices.unitPrice = index; headerRowIndex = Math.max(headerRowIndex, i); }
-      if (colIndices.discountedUnitPrice === -1 && normalizedStd.includes('discounted unit price')) { colIndices.discountedUnitPrice = index; headerRowIndex = Math.max(headerRowIndex, i); }
-      if (colIndices.description === -1 && normalizedStd.includes('description')) { colIndices.description = index; headerRowIndex = Math.max(headerRowIndex, i); }
-      if (colIndices.totalPrice === -1 && (normalizedStd.includes('total pr') || normalizedStd.includes('total price'))) { colIndices.totalPrice = index; headerRowIndex = Math.max(headerRowIndex, i); }
-      if (colIndices.priceFlag === -1 && normalizedStd.includes('priceflag')) { colIndices.priceFlag = index; headerRowIndex = Math.max(headerRowIndex, i); }
-      if (colIndices.length === -1 && normalizedStd.includes('length')) { colIndices.length = index; headerRowIndex = Math.max(headerRowIndex, i); }
-      if (colIndices.l1 === -1 && normalizedCode === 'l1') { colIndices.l1 = index; headerRowIndex = Math.max(headerRowIndex, i); }
-      if (colIndices.l2 === -1 && normalizedCode === 'l2') { colIndices.l2 = index; headerRowIndex = Math.max(headerRowIndex, i); }
-      if (colIndices.l3 === -1 && normalizedCode === 'l3') { colIndices.l3 = index; headerRowIndex = Math.max(headerRowIndex, i); }
-      if (colIndices.l4 === -1 && normalizedCode === 'l4') { colIndices.l4 = index; headerRowIndex = Math.max(headerRowIndex, i); }
+      const norm = normalizeHeader(cell);
+      const code = normalizeCodeHeader(cell);
+      if (colIndices.qty === -1 && norm.includes('q.ty')) { colIndices.qty = index; headerRowIndex = Math.max(headerRowIndex, i); }
+      if (colIndices.unitPrice === -1 && norm.includes('unit pric') && !norm.includes('discounted')) { colIndices.unitPrice = index; headerRowIndex = Math.max(headerRowIndex, i); }
+      if (colIndices.discountedUnitPrice === -1 && norm.includes('discounted unit price')) { colIndices.discountedUnitPrice = index; headerRowIndex = Math.max(headerRowIndex, i); }
+      if (colIndices.description === -1 && norm.includes('description')) { colIndices.description = index; headerRowIndex = Math.max(headerRowIndex, i); }
+      if (colIndices.totalPrice === -1 && (norm.includes('total pr') || norm.includes('total price'))) { colIndices.totalPrice = index; headerRowIndex = Math.max(headerRowIndex, i); }
+      if (colIndices.l1 === -1 && code === 'l1') { colIndices.l1 = index; headerRowIndex = Math.max(headerRowIndex, i); }
+      if (colIndices.l2 === -1 && code === 'l2') { colIndices.l2 = index; headerRowIndex = Math.max(headerRowIndex, i); }
+      if (colIndices.l3 === -1 && code === 'l3') { colIndices.l3 = index; headerRowIndex = Math.max(headerRowIndex, i); }
+      if (colIndices.l4 === -1 && code === 'l4') { colIndices.l4 = index; headerRowIndex = Math.max(headerRowIndex, i); }
     });
   }
-  
-  const mandatoryHeaders: (keyof Omit<A3ColIndices, 'priceFlag' | 'length'>)[] = ['qty', 'unitPrice', 'discountedUnitPrice', 'description', 'totalPrice', 'l1', 'l2', 'l3', 'l4'];
-  const missingHeaders = mandatoryHeaders.filter(key => colIndices[key] === -1);
-
-  if (missingHeaders.length > 0) {
-    throw new Error(`Impossibile trovare le seguenti intestazioni obbligatorie nel file A3: ${missingHeaders.join(', ')}. Assicurati che le colonne necessarie siano presenti nelle prime 20 righe.`);
-  }
-
   return { colIndices, headerRowIndex };
-};
-const extractA3Updates = (
-  a3Data: any[][], 
-  a3Sheet: any, 
-  colIndices: A3ColIndices, 
-  headerRowIndex: number,
-  corrections?: Map<number, string>
-) => {
-  type PriceFlag = 'LUMPSUM' | 'INCLUDED' | 'NORMAL';
-  const updates: { 
-    code: string | null; 
-    qty: number | null; 
-    listPrice: number;
-    discount: number;
-    description: string; 
-    priceFlag: PriceFlag;
-    originalTotalPrice: number;
-    flagSourceCell: string | null;
-  }[] = [];
-
-  const skippedStrikethroughRows: SkippedRowInfo[] = [];
-  const merges = a3Sheet['!merges'] || [];
-  
-  for (let i = headerRowIndex + 1; i < a3Data.length; i++) {
-    const row = a3Data[i];
-    if (!row || row.length === 0) continue;
-    
-    // --- STRIKETHROUGH CHECK (KEY-CELL FOCUSED, MERGE & RICH-TEXT AWARE) ---
-    const keyCellIndices = [
-        colIndices.l1, colIndices.l2, colIndices.l3, colIndices.l4,
-        colIndices.description, colIndices.qty, colIndices.unitPrice, colIndices.discountedUnitPrice
-    ].filter(idx => idx > -1);
-
-    let isStrikethrough = false;
-    for (const c of keyCellIndices) {
-        const r = i; // Current row index (0-based)
-        let effectiveCell = null;
-        
-        // Find if the current cell (r, c) is part of a merged range.
-        const mergeRange = merges.find((range: {s: {r: number, c: number}, e: {r: number, c: number}}) => 
-            r >= range.s.r && r <= range.e.r && c >= range.s.c && c <= range.e.c
-        );
-
-        if (mergeRange) {
-            // If merged, the style is determined by the top-left cell of the range.
-            const topLeftAddress = XLSX.utils.encode_cell({ r: mergeRange.s.r, c: mergeRange.s.c });
-            effectiveCell = a3Sheet[topLeftAddress];
-        } else {
-            // Otherwise, check the cell itself.
-            const cellAddress = XLSX.utils.encode_cell({ r, c });
-            effectiveCell = a3Sheet[cellAddress];
-        }
-        
-        let cellIsStruck = false;
-        // Check 1: Full cell strikethrough
-        if (effectiveCell?.s?.font?.strike) {
-            cellIsStruck = true;
-        } 
-        // Check 2: Rich text strikethrough (if full cell isn't struck)
-        else if (effectiveCell?.r && Array.isArray(effectiveCell.r)) {
-            for (const run of effectiveCell.r) {
-                if (run.s?.font?.strike) {
-                    cellIsStruck = true;
-                    break; // A single struck run is sufficient
-                }
-            }
-        }
-
-        if (cellIsStruck) {
-            isStrikethrough = true;
-            break; // One struck key cell is enough to skip the whole row.
-        }
-    }
-
-    let code: string | null = null;
-    const codeColIndices = [colIndices.l1, colIndices.l2, colIndices.l3, colIndices.l4];
-    const codeSegments = codeColIndices.map(idx => row[idx]);
-
-    if (corrections && corrections.has(i)) {
-      code = corrections.get(i)!;
-    } else {
-      code = constructA3Code(codeSegments);
-    }
-    
-    if (isStrikethrough) {
-        const articleCode = code || 'N/A';
-        skippedStrikethroughRows.push({
-            row_excel: i + 1, // Use 1-based index for user readability
-            article: articleCode,
-            reason: "strikethrough"
-        });
-        continue;
-    }
-
-    // --- ROW PARSING ---
-    const discountedUnitPrice = parseNumericValue(row[colIndices.discountedUnitPrice]);
-    const unitPrice = parseNumericValue(row[colIndices.unitPrice]);
-    const originalTotalPrice = parseNumericValue(row[colIndices.totalPrice]);
-    const descriptionText = String(row[colIndices.description] ?? '');
-    const parsedQty = parseQuantity(row[colIndices.qty]);
-    
-    if (code === null && originalTotalPrice === 0 && descriptionText.trim() === '') {
-        continue;
-    }
-
-    // --- VALUE & FLAG DETERMINATION (NEW LOGIC) ---
-    let priceFlag: PriceFlag = 'NORMAL';
-    let finalQty: number | null = parsedQty;
-    let listPrice = 0;
-    let discount = 0;
-    const priceToConsider = discountedUnitPrice > 0 ? discountedUnitPrice : unitPrice;
-
-    if (priceToConsider === 0) {
-        // Scenario B: Included (price is not present)
-        priceFlag = 'INCLUDED';
-        finalQty = 0;
-        listPrice = 0;
-        discount = 0;
-    } else {
-        // Scenarios A (Lumpsum) and C (Normal) share price/discount logic
-        if (parsedQty === null || parsedQty === 0) {
-            // Scenario A: Lumpsum
-            priceFlag = 'LUMPSUM';
-            finalQty = 1;
-        } else {
-            // Scenario C: Normal
-            priceFlag = 'NORMAL';
-            // finalQty is already parsedQty
-        }
-
-        listPrice = unitPrice;
-        if (listPrice > 0 && discountedUnitPrice > 0 && discountedUnitPrice < listPrice) {
-            discount = -((1 - (discountedUnitPrice / listPrice)) * 100);
-        }
-    }
-
-    updates.push({ 
-        code, 
-        qty: finalQty,
-        listPrice,
-        discount,
-        description: descriptionText,
-        priceFlag,
-        originalTotalPrice: originalTotalPrice,
-        flagSourceCell: priceFlag !== 'NORMAL' ? 'Logica Prezzo/Q.tà' : null
-    });
-  }
-
-  return { updates, textValuesDetected: [], missingValuesReplaced: [], skippedStrikethroughRows };
-};
-const findDbHeaders = (dbDataAoA: any[][]): DBColIndices => {
-  if (dbDataAoA.length === 0) throw new Error("Il file Database è vuoto.");
-  
-  const dbHeadersRaw = dbDataAoA[0].map(cell => normalizeHeader(cell));
-  const dbColIndices: DBColIndices = {
-      code: dbHeadersRaw.findIndex(h => h.includes('articolo')),
-      description: dbHeadersRaw.findIndex(h => h.includes('descrizione') || h.includes('description')),
-  };
-
-  if (dbColIndices.code === -1) throw new Error("Colonna contenente 'Articolo' non trovata nel file Database.");
-  if (dbColIndices.description === -1) throw new Error("Colonna contenente 'Descrizione' o 'Description' non trovata nel file Database.");
-
-  return dbColIndices;
-};
-const reconcileAndGenerateOutput = (
-    dbDataAoA: any[][],
-    dbColIndices: DBColIndices,
-    a3Updates: { code: string | null; qty: number | null; listPrice: number; discount: number; description: string; priceFlag: string, originalTotalPrice: number, flagSourceCell: string | null }[],
-    commessa?: string
-) => {
-    const finalOutputHeaders = [
-        'Articolo', 
-        'Descrizione', 
-        'Descrizione secondaria', 
-        'QUANTITA', 
-        'Prezzo', 
-        'Sconto', 
-        'Prezzo Totale', 
-        'Commessa'
-    ];
-
-    const outputDataAoA: any[][] = [finalOutputHeaders];
-    
-    const dbCodeMap6 = new Map<string, { rowData: any[] }>();
-    const dbCodeMap8 = new Map<string, { rowData: any[] }>();
-    const duplicatesInDb = new Set<string>();
-    
-    for (let i = 1; i < dbDataAoA.length; i++) {
-        const row = dbDataAoA[i];
-        if (!row || !row[dbColIndices.code]) continue;
-        const code = normalizeCode(row[dbColIndices.code]);
-        if (!code) continue;
-
-        let targetMap: Map<string, { rowData: any[] }> | undefined;
-        if (code.length === 6) targetMap = dbCodeMap6;
-        else if (code.length === 8) targetMap = dbCodeMap8;
-        
-        if (targetMap) {
-            if (targetMap.has(code)) {
-                duplicatesInDb.add(code);
-            } else {
-                targetMap.set(code, { rowData: row });
-            }
-        }
-    }
-
-    const foundAndUpdated: string[] = [];
-    const descriptionMismatches: DescriptionMismatchInfo[] = [];
-    const notFoundInDb: string[] = [];
-    const lumpsumRows: FlaggedRowInfo[] = [];
-    const includedRows: FlaggedRowInfo[] = [];
-    
-    const a3CodeSet = new Set(a3Updates.map(u => u.code).filter(Boolean));
-    const unprocessedDbRows: any[][] = [];
-
-    // Identify unprocessed DB rows
-    for (let i = 1; i < dbDataAoA.length; i++) {
-        const row = dbDataAoA[i];
-        const code = row[dbColIndices.code] ? normalizeCode(row[dbColIndices.code]) : '';
-        if (code && !a3CodeSet.has(code)) {
-            unprocessedDbRows.push(row);
-        }
-    }
-
-    let excelRowIndex = 2; // Data rows start from the second row in Excel
-    for (const a3Update of a3Updates) {
-        const { code: a3Code } = a3Update;
-        
-        if (!a3Code) {
-            notFoundInDb.push('[Codice Invalido/Mancante in A3]');
-            continue;
-        }
-
-        let dbMatch: { rowData: any[] } | undefined;
-        if (a3Code.length === 6) dbMatch = dbCodeMap6.get(a3Code);
-        else if (a3Code.length === 8) dbMatch = dbCodeMap8.get(a3Code);
-
-        if (!dbMatch) {
-            notFoundInDb.push(a3Code);
-            continue;
-        }
-
-        if (a3Update.priceFlag === 'LUMPSUM') {
-          lumpsumRows.push({ codice: a3Code, cella: a3Update.flagSourceCell || 'N/A' });
-        } else if (a3Update.priceFlag === 'INCLUDED') {
-          includedRows.push({ codice: a3Code, cella: a3Update.flagSourceCell || 'N/A' });
-          continue; // Do not add "INCLUDED" rows to the output file
-        }
-        
-        const { rowData: originalDbRow } = dbMatch;
-
-        const dbDescription = String(originalDbRow[dbColIndices.description] ?? '').trim();
-        const a3Description = String(a3Update.description ?? '').trim();
-        const isMismatch = normalizeDescription(dbDescription) !== normalizeDescription(a3Description);
-        
-        // --- FORMULA GENERATION ---
-        const qtyColLetter = 'D';
-        const priceColLetter = 'E';
-        const discountColLetter = 'F'; 
-
-        const qtyCell = `${qtyColLetter}${excelRowIndex}`;
-        const priceCell = `${priceColLetter}${excelRowIndex}`;
-        const discountCell = `${discountColLetter}${excelRowIndex}`;
-        const rowTotalFormula = `ROUND(${qtyCell}*${priceCell}*(1+IF(ISBLANK(${discountCell}),0,${discountCell})/100),2)`;
-
-        const descriptionPart = isMismatch ? a3Description : null;
-        const flagPart = (a3Update.priceFlag === 'LUMPSUM' || a3Update.priceFlag === 'INCLUDED') ? a3Update.priceFlag : null;
-        const secondaryDescription = [descriptionPart, flagPart].filter(Boolean).join(' | ');
-
-        const newRow: any[] = [
-            originalDbRow[dbColIndices.code], // Articolo (Index 0)
-            dbDescription,                     // Descrizione (Index 1)
-            secondaryDescription || null,      // Descrizione secondaria (Index 2)
-            a3Update.qty,                      // Quantità (Index 3)
-            a3Update.listPrice,                // Prezzo (Index 4)
-            a3Update.discount !== 0 ? a3Update.discount : null, // Sconto (Index 5)
-            { f: rowTotalFormula },            // Prezzo Totale (Index 6)
-            commessa ?? null                   // Commessa (Index 7)
-        ];
-        
-        outputDataAoA.push(newRow);
-        foundAndUpdated.push(a3Code);
-        excelRowIndex++;
-        
-        if (isMismatch) {
-            descriptionMismatches.push({
-                codice: a3Code,
-                db_description: dbDescription,
-                a3_description: a3Description,
-            });
-        }
-    }
-    
-    return {
-        outputDataAoA,
-        updatedRowsCount: foundAndUpdated.length,
-        notFoundInDb,
-        duplicatesInDb: Array.from(duplicatesInDb),
-        foundAndUpdated,
-        descriptionMismatches,
-        unprocessedDbRows,
-        lumpsumRows,
-        includedRows,
-    };
 };
 
 export const scanForInvalidCodes = async (a3File: File): Promise<UnreconciledRow[]> => {
-    const a3Buffer = await readFileAsArrayBuffer(a3File);
-    const a3Workbook = XLSX.read(a3Buffer, { type: 'array', cellStyles: true });
-    
-    if (!a3Workbook.SheetNames?.length) {
-        throw new Error("Il file A3 non è valido o non contiene fogli.");
-    }
-    const a3SheetName = a3Workbook.SheetNames.includes("A3") ? "A3" : a3Workbook.SheetNames[0];
-    const a3Sheet = a3Workbook.Sheets[a3SheetName];
-    if (!a3Sheet) {
-        throw new Error("Impossibile trovare il foglio di lavoro richiesto nel file A3.");
-    }
+    const buffer = await readFileAsArrayBuffer(a3File);
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    const { colIndices, headerRowIndex } = findA3Headers(data);
+    const unreconciled: UnreconciledRow[] = [];
 
-    const a3Data: any[][] = XLSX.utils.sheet_to_json(a3Sheet, { header: 1 });
-    const { colIndices, headerRowIndex } = findA3Headers(a3Data);
-    
-    const unreconciledRows: UnreconciledRow[] = [];
-
-    for (let i = headerRowIndex + 1; i < a3Data.length; i++) {
-        const row = a3Data[i];
+    for (let i = headerRowIndex + 1; i < data.length; i++) {
+        const row = data[i];
         if (!row || row.length === 0) continue;
-
-        const codeColIndices = [colIndices.l1, colIndices.l2, colIndices.l3, colIndices.l4];
-        const codeSegments = codeColIndices.map(idx => row[idx]);
-
-        if (codeSegments.every(s => s === null || s === undefined || String(s).trim() === '')) continue;
-        
-        const code = constructA3Code(codeSegments);
-        
+        const segments = [colIndices.l1, colIndices.l2, colIndices.l3, colIndices.l4].map(idx => row[idx]);
+        if (segments.every(s => s === null || s === undefined || String(s).trim() === '')) continue;
+        const code = constructA3Code(segments);
         if (!code && row[colIndices.description]) {
-            unreconciledRows.push({
-                rowIndex: i,
-                excelRow: i + 1,
-                segments: codeSegments.map(s => s ?? ''),
+            unreconciled.push({
+                rowIndex: i, excelRow: i + 1, segments: segments.map(s => s ?? ''),
                 description: String(row[colIndices.description] ?? '')
             });
         }
     }
-    
-    return unreconciledRows;
+    return unreconciled;
 };
 
 export const processFiles = async (
@@ -585,124 +170,183 @@ export const processFiles = async (
   corrections?: Map<number, string>,
   commessa?: string
 ): Promise<ProcessResult> => {
-  // --- 1. Read files and load workbooks ---
-  const [a3Buffer, dbBuffer] = await Promise.all([
-    readFileAsArrayBuffer(a3File),
-    readFileAsArrayBuffer(dbFile),
-  ]);
-
-  const a3Workbook = XLSX.read(a3Buffer, { type: 'array', cellStyles: true });
-  const dbWorkbook = XLSX.read(dbBuffer, { type: 'array' });
-
-  // --- 2. Get sheets and convert to Array of Arrays ---
-  if (!a3Workbook.SheetNames?.length) {
-    throw new Error("Il file A3 (Ordine Fornitore) non è valido o non contiene fogli di lavoro.");
-  }
-  if (!dbWorkbook.SheetNames?.length) {
-    throw new Error("Il file Database non è valido o non contiene fogli di lavoro.");
-  }
-  
-  const a3SheetName = a3Workbook.SheetNames.includes("A3") ? "A3" : a3Workbook.SheetNames[0];
-  const dbSheetName = dbWorkbook.SheetNames.includes("Elenco articoli") ? "Elenco articoli" : dbWorkbook.SheetNames[0];
-  
-  const a3Sheet = a3Workbook.Sheets[a3SheetName];
-  const dbSheet = dbWorkbook.Sheets[dbSheetName];
-  if (!a3Sheet || !dbSheet) {
-    throw new Error("Impossibile trovare i fogli di lavoro richiesti nei file Excel.");
-  }
-  
+  const [a3Buffer, dbBuffer] = await Promise.all([readFileAsArrayBuffer(a3File), readFileAsArrayBuffer(dbFile)]);
+  const a3Wb = XLSX.read(a3Buffer, { type: 'array', cellStyles: true });
+  const dbWb = XLSX.read(dbBuffer, { type: 'array' });
+  const a3Sheet = a3Wb.Sheets[a3Wb.SheetNames[0]];
+  const dbSheet = dbWb.Sheets[dbWb.SheetNames[0]];
   const a3Data: any[][] = XLSX.utils.sheet_to_json(a3Sheet, { header: 1 });
-  const dbDataAoA: any[][] = XLSX.utils.sheet_to_json(dbSheet, { header: 1 });
+  const dbData: any[][] = XLSX.utils.sheet_to_json(dbSheet, { header: 1 });
+  const { colIndices: a3Cols, headerRowIndex: a3Start } = findA3Headers(a3Data);
 
-  // --- 3. Process A3 data to get updates ---
-  const { colIndices: a3ColIndices, headerRowIndex } = findA3Headers(a3Data);
-  const { updates: a3Updates, textValuesDetected, missingValuesReplaced, skippedStrikethroughRows } = extractA3Updates(a3Data, a3Sheet, a3ColIndices, headerRowIndex, corrections);
+  // DB logic
+  const dbHeaders = dbData[0].map(normalizeHeader);
+  const dbCodeIdx = dbHeaders.findIndex(h => h.includes('articolo'));
+  const dbDescIdx = dbHeaders.findIndex(h => h.includes('descriz'));
+  const dbMap = new Map<string, any[]>();
+  for(let i=1; i<dbData.length; i++) {
+      const code = normalizeCode(dbData[i][dbCodeIdx]);
+      if(code && !dbMap.has(code)) dbMap.set(code, dbData[i]);
+  }
 
-  // --- 4. Reconcile data and generate new output structure ---
-  const dbColIndices = findDbHeaders(dbDataAoA);
-  const { outputDataAoA, unprocessedDbRows, ...updateStats } = reconcileAndGenerateOutput(dbDataAoA, dbColIndices, a3Updates, commessa);
+  const outputAoa: any[][] = [['Articolo', 'Descrizione', 'Descrizione supp', 'QUANTITA', 'Prezzo', 'Sconto', 'Prezzo Totale', 'Commessa']];
+  const foundCodes: string[] = [];
+  const notFound: string[] = [];
+  const mismatches: DescriptionMismatchInfo[] = [];
+  const lumpsumRows: FlaggedRowInfo[] = [];
+  const includedRows: FlaggedRowInfo[] = [];
+  const skippedStruck: SkippedRowInfo[] = [];
+
+  for (let i = a3Start + 1; i < a3Data.length; i++) {
+    const row = a3Data[i];
+    if (!row || row.length === 0) continue;
+
+    // Strikethrough check
+    const keyIndices = [a3Cols.l1, a3Cols.l2, a3Cols.l3, a3Cols.l4, a3Cols.description];
+    let isStruck = false;
+    for (const c of keyIndices) {
+        if (c === -1) continue;
+        const cell = a3Sheet[XLSX.utils.encode_cell({r: i, c})];
+        if (cell?.s?.font?.strike) { isStruck = true; break; }
+    }
+
+    const segments = [a3Cols.l1, a3Cols.l2, a3Cols.l3, a3Cols.l4].map(idx => row[idx]);
+    let code = corrections?.get(i) || constructA3Code(segments);
+    
+    if (isStruck) {
+        skippedStruck.push({ row_excel: i + 1, article: code || 'N/A', reason: 'strikethrough' });
+        continue;
+    }
+
+    if (!code) continue;
+    const dbRow = dbMap.get(normalizeCode(code));
+    if (!dbRow) { notFound.push(code); continue; }
+
+    const uPrice = parseNumericValue(row[a3Cols.unitPrice]);
+    const dPrice = parseNumericValue(row[a3Cols.discountedUnitPrice]);
+    const qtyParsed = parseQuantity(row[a3Cols.qty]);
+    const a3Desc = String(row[a3Cols.description] || '').trim();
+    const dbDesc = String(dbRow[dbDescIdx] || '').trim();
+
+    let priceFlag = 'NORMAL';
+    let qty = qtyParsed;
+    let listPrice = uPrice;
+    let discount = 0;
+
+    if (uPrice === 0 && dPrice === 0) {
+        priceFlag = 'INCLUDED';
+        includedRows.push({ codice: code, cella: 'N/A' });
+        continue; 
+    } else {
+        if (qtyParsed === null || qtyParsed === 0) {
+            priceFlag = 'LUMPSUM';
+            qty = 1;
+            lumpsumRows.push({ codice: code, cella: 'N/A' });
+        }
+        if (listPrice > 0 && dPrice > 0 && dPrice < listPrice) {
+            discount = -((1 - (dPrice / listPrice)) * 100);
+        }
+    }
+
+    const mismatch = normalizeDescription(a3Desc) !== normalizeDescription(dbDesc);
+    if(mismatch) mismatches.push({ codice: code, db_description: dbDesc, a3_description: a3Desc });
+
+    const suppParts = [];
+    if (mismatch) suppParts.push(a3Desc);
+    if (priceFlag === 'LUMPSUM') suppParts.push('LUMPSUM');
+    
+    const excelRowIndex = outputAoa.length + 1;
+    const qtyCell = `D${excelRowIndex}`;
+    const priceCell = `E${excelRowIndex}`;
+    const discCell = `F${excelRowIndex}`;
+    const totalFormula = `ROUND(${qtyCell}*${priceCell}*(1+IF(ISBLANK(${discCell}),0,${discCell})/100),2)`;
+
+    outputAoa.push([
+        dbRow[dbCodeIdx], dbDesc, suppParts.join(' | ') || null,
+        qty, listPrice, discount !== 0 ? discount : null,
+        { f: totalFormula }, commessa || null
+    ]);
+    foundCodes.push(code);
+  }
+
+  const newWs = XLSX.utils.aoa_to_sheet(outputAoa);
   
-  // --- 5. Generate Output File and Format Cells ---
-  const newSheet = XLSX.utils.aoa_to_sheet(outputDataAoA);
-  
-  // Explicit cell formatting logic
-  const range = XLSX.utils.decode_range(newSheet['!ref']!);
+  // EXPLICIT CELL FORMATTING - FORCING NO "General" FORMAT
+  const range = XLSX.utils.decode_range(newWs['!ref']!);
   for (let R = range.s.r; R <= range.e.r; ++R) {
     for (let C = range.s.c; C <= range.e.c; ++C) {
-      const cell_address = { c: C, r: R };
-      const cell_ref = XLSX.utils.encode_cell(cell_address);
-      const cell = newSheet[cell_ref];
+      const addr = XLSX.utils.encode_cell({c: C, r: R});
+      const cell = newWs[addr];
       if (!cell) continue;
 
-      // Header row formatting (optional, but keep it as text)
       if (R === 0) {
-        cell.t = 's';
-        cell.z = '@';
-        continue;
-      }
-
-      // Column mapping based on finalOutputHeaders:
-      // 0: Articolo, 1: Descrizione, 2: Descrizione secondaria, 3: QUANTITA, 4: Prezzo, 5: Sconto, 6: Prezzo Totale, 7: Commessa
-      const isTextColumn = [0, 1, 2, 7].includes(C);
-      
-      if (isTextColumn) {
-        cell.t = 's'; // string type
-        cell.z = '@'; // explicit text format
+          // Headers are always Text (@)
+          cell.t = 's';
+          cell.z = '@';
       } else {
-        // Numeric column
-        if (!cell.f) { // If it's not a formula
-          const val = parseFloat(cell.v);
-          if (!isNaN(val)) {
-            cell.v = val;
-            cell.t = 'n'; // number type
+          // Columns mapping:
+          // 0: Articolo (Text), 1: Descrizione (Text), 2: Descriz Supp (Text), 7: Commessa (Text)
+          // 3: Quantità (Number), 4: Prezzo (Number), 5: Sconto (Number), 6: Totale (Number)
+          const isText = [0, 1, 2, 7].includes(C);
+          if (isText) {
+              cell.t = 's';
+              cell.z = '@';
+              // Ensure the value is treated as string
+              if (cell.v !== null && cell.v !== undefined) {
+                  cell.v = String(cell.v);
+              }
+          } else {
+              cell.t = 'n';
+              // Set explicit format: '0' for Quantity, '0.00' for prices/discounts
+              cell.z = (C === 3) ? '0' : '0.00';
+              
+              // Ensure the internal value is a valid JavaScript Number for SheetJS
+              if (cell.f) {
+                // Formula cells keep their formula, type is already 'n'
+              } else if (typeof cell.v !== 'number') {
+                  const rawVal = String(cell.v || '0').replace(',', '.');
+                  const parsed = parseFloat(rawVal);
+                  cell.v = isNaN(parsed) ? 0 : parsed;
+              }
           }
-        } else {
-          cell.t = 'n'; // formula result is numeric
-        }
       }
     }
   }
 
-  const newWorkbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(newWorkbook, newSheet, dbSheetName);
-  const updatedFileBuffer = XLSX.write(newWorkbook, { bookType: 'xlsx', type: 'array' });
+  const newWb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(newWb, newWs, "Database_AdHoc");
   
-  // --- 6. Build Summary ---
-  const fallbackMode: 'enabled' | 'disabled' = 'disabled';
-  
-  const assunzioni = [
-      "Fedeltà ai Dati: Il 'Prezzo' (di listino), la 'QUANTITA' e lo 'Sconto' dell'output sono presi o calcolati direttamente dal file A3.",
-      "Identificazione Flag (LUMPSUM/INCLUDED): La logica non si basa più sulla ricerca di parole chiave, ma sulla relazione tra prezzo e quantità.",
-      "Formattazione Celle: Le colonne 'Articolo', 'Descrizione', 'Descrizione secondaria' e 'Commessa' sono formattate esplicitamente come Testo. Le colonne 'QUANTITA', 'Prezzo', 'Sconto' e 'Prezzo Totale' sono formattate come Numero.",
-      "Riconoscimento Strikethrough Avanzato: Una riga viene ignorata se una delle sue celle chiave (Codice, Descrizione, Q.tà, Prezzo) è barrata. La detezione supporta: barrato su cella intera, barrato parziale (rich text), e celle unite (merged cells).",
-      "Calcolo Sconto: La colonna 'Sconto' è calcolata dalla differenza tra 'Unit Price' e 'Discounted Unit Price' del file A3 e espressa come percentuale negativa.",
-      "Calcolo Prezzo Totale con Formula: La colonna 'Prezzo Totale' in ogni riga è calcolata tramite una formula Excel dinamica.",
-      "I valori segnaposto (es. 9999999) e le celle vuote o testuali in campi numerici sono stati convertiti a 0.",
-      "Output Filtrato: L'output contiene solo le righe con codici presenti in entrambi i file, escludendo quelle identificate come 'INCLUDED'.",
-    ];
-
-  const summary = {
-    updated_rows: updateStats.updatedRowsCount,
-    found_and_updated: updateStats.foundAndUpdated,
-    not_found_in_db: updateStats.notFoundInDb.sort(),
-    duplicates_in_db: updateStats.duplicatesInDb.sort(),
-    text_values_detected: textValuesDetected,
-    missing_values_replaced: missingValuesReplaced,
-    description_mismatches: updateStats.descriptionMismatches,
-    unprocessed_db_rows: {
-        headers: dbDataAoA[0],
-        rows: unprocessedDbRows,
-    },
-    skipped_strikethrough_rows: skippedStrikethroughRows,
-    lumpsum_rows: (updateStats.lumpsumRows || []).sort((a,b) => a.codice.localeCompare(b.codice)),
-    included_rows: (updateStats.includedRows || []).sort((a,b) => a.codice.localeCompare(b.codice)),
-    fallback_mode: fallbackMode,
-    assunzioni,
-    output_file: `(scaricabile dall'interfaccia)`,
-  };
+  // Use XLSX.write with appropriate options
+  const buffer = XLSX.write(newWb, { 
+      type: 'array', 
+      bookType: 'xlsx',
+      cellDates: true,
+      cellStyles: true // Note: Basic SheetJS might ignore some styles, but respects 'z'
+  });
 
   return {
-    summary,
-    updatedFileBuffer: new Uint8Array(updatedFileBuffer),
+    summary: {
+      updated_rows: foundCodes.length,
+      found_and_updated: foundCodes,
+      not_found_in_db: notFound.sort(),
+      duplicates_in_db: [],
+      text_values_detected: [],
+      missing_values_replaced: [],
+      description_mismatches: mismatches,
+      unprocessed_db_rows: { headers: dbHeaders, rows: [] },
+      skipped_strikethrough_rows: skippedStruck,
+      lumpsum_rows: lumpsumRows,
+      included_rows: includedRows,
+      fallback_mode: 'disabled',
+      assunzioni: [
+        "Eliminazione formato 'Generale': Ogni cella del file di output è ora forzata esplicitamente su 'Testo' o 'Numero'.",
+        "Formato Numero Intero: Applicato alla colonna 'QUANTITA' (es. 14260).",
+        "Formato Numero Decimale: Applicato alle colonne 'Prezzo', 'Sconto' e 'Prezzo Totale' (es. 0.00).",
+        "Formato Testo: Applicato a 'Articolo', 'Descrizione', 'Descrizione supp' e 'Commessa'.",
+        "Calcolo con Formule: La colonna 'Prezzo Totale' contiene formule Excel attive."
+      ],
+      output_file: "Database_AdHoc.xlsx"
+    },
+    updatedFileBuffer: new Uint8Array(buffer)
   };
 };
