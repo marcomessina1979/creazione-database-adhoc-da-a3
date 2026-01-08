@@ -316,12 +316,12 @@ export const processFiles = async (
   const newWb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(newWb, newWs, "Database_AdHoc");
   
-  // Use XLSX.write with appropriate options
+  // Use XLSX.write with 'xls' bookType to generate a real BIFF8 binary file (Excel 97-2003)
   const buffer = XLSX.write(newWb, { 
       type: 'array', 
-      bookType: 'xlsx',
+      bookType: 'xls', // BINARY EXCEL 97-2003 (BIFF8)
       cellDates: true,
-      cellStyles: true // Note: Basic SheetJS might ignore some styles, but respects 'z'
+      cellStyles: true 
   });
 
   return {
@@ -339,13 +339,14 @@ export const processFiles = async (
       included_rows: includedRows,
       fallback_mode: 'disabled',
       assunzioni: [
+        "Formato File: Esportazione in formato Microsoft Excel 97–2003 binario (.xls, BIFF8).",
         "Eliminazione formato 'Generale': Ogni cella del file di output è ora forzata esplicitamente su 'Testo' o 'Numero'.",
         "Formato Numero Intero: Applicato alla colonna 'QUANTITA' (es. 14260).",
         "Formato Numero Decimale: Applicato alle colonne 'Prezzo', 'Sconto' e 'Prezzo Totale' (es. 0.00).",
         "Formato Testo: Applicato a 'Articolo', 'Descrizione', 'Descrizione supp' e 'Commessa'.",
-        "Calcolo con Formule: La colonna 'Prezzo Totale' contiene formule Excel attive."
+        "Calcolo con Formule: La colonna 'Prezzo Totale' contiene formule Excel attive compatibili con Excel 2003."
       ],
-      output_file: "Database_AdHoc.xlsx"
+      output_file: "Database_AdHoc.xls"
     },
     updatedFileBuffer: new Uint8Array(buffer)
   };

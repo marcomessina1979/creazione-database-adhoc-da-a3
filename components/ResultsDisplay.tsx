@@ -99,15 +99,17 @@ export const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results, a3FileN
   const { summary } = results;
   
   const handleDownload = useCallback(() => {
+    // MIME type for Excel 97-2003 (.xls)
     const blob = new Blob([results.updatedFileBuffer], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      type: 'application/vnd.ms-excel',
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     
     const nameWithoutExt = a3FileName.substring(0, a3FileName.lastIndexOf('.')) || a3FileName;
-    a.download = `${nameWithoutExt}_output_AdHoc.xlsx`;
+    // Download as .xls file
+    a.download = `${nameWithoutExt}_output_AdHoc.xls`;
     
     document.body.appendChild(a);
     a.click();
@@ -137,7 +139,7 @@ export const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results, a3FileN
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
-            <span>Scarica File Elaborato</span>
+            <span>Scarica File .XLS (Excel 97-2003)</span>
           </button>
       </div>
 
@@ -151,9 +153,9 @@ export const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results, a3FileN
         <Details title="Assunzioni Applicate" count={summary.assunzioni.length + 1} defaultOpen>
             <div className="text-sm text-gray-600 space-y-2 p-2 bg-gray-50 rounded-md">
                 <p className="font-semibold text-gray-800 flex items-center">
-                    Modalità Rilevamento Stile:
-                    <span className={`ml-2 text-xs font-bold px-2 py-0.5 rounded-full ${summary.fallback_mode === 'disabled' ? 'text-green-800 bg-green-100' : 'text-yellow-800 bg-yellow-100'}`}>
-                        {summary.fallback_mode === 'disabled' ? 'ATTIVO' : 'FALLBACK'}
+                    Modalità Esportazione:
+                    <span className={`ml-2 text-xs font-bold px-2 py-0.5 rounded-full text-green-800 bg-green-100`}>
+                        EXCEL 97-2003 (BIFF8)
                     </span>
                 </p>
                 <ul className="list-disc list-inside pt-1">

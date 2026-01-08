@@ -1,5 +1,5 @@
 {
-  "name": "Creazione Database AdHoc da A3_2.5",
+  "name": "Creazione Database AdHoc da A3_2.6",
   "description": "Genera un file database compatibile con AdHoc, popolandolo con i dati aggiornati da un file di Ordine Fornitore (A3) e un database di partenza.",
   "requestFramePermissions": []
 }
