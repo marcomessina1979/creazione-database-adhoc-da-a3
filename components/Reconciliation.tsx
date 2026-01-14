@@ -1,15 +1,17 @@
-
 import React, { useState } from 'react';
 import type { UnreconciledRow } from '../types';
+import { translations, Language } from '../translations';
 
 interface ReconciliationProps {
   rows: UnreconciledRow[];
   onConfirm: (corrections: Map<number, string>) => void;
   onCancel: () => void;
+  language: Language;
 }
 
-export const Reconciliation: React.FC<ReconciliationProps> = ({ rows, onConfirm, onCancel }) => {
+export const Reconciliation: React.FC<ReconciliationProps> = ({ rows, onConfirm, onCancel, language }) => {
     const [corrections, setCorrections] = useState<Map<number, string>>(new Map());
+    const t = translations[language];
 
     const handleCodeChange = (rowIndex: number, code: string) => {
         const newCorrections = new Map(corrections);
@@ -30,10 +32,9 @@ export const Reconciliation: React.FC<ReconciliationProps> = ({ rows, onConfirm,
         <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50 animate-fade-in">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
                 <header className="p-6 border-b border-gray-200">
-                    <h2 className="text-2xl font-bold text-gray-800">Riconciliazione Codici Articolo</h2>
+                    <h2 className="text-2xl font-bold text-gray-800">{t.reconciliationTitle}</h2>
                     <p className="mt-1 text-gray-600">
-                        Sono state trovate {rows.length} righe con un codice articolo non valido o mancante.
-                        Inserisci il codice corretto (6 o 8 caratteri) per includerle nell'elaborazione, altrimenti verranno ignorate.
+                        {t.reconciliationSub(rows.length)}
                     </p>
                 </header>
 
@@ -42,10 +43,10 @@ export const Reconciliation: React.FC<ReconciliationProps> = ({ rows, onConfirm,
                         <table className="w-full text-sm text-left text-gray-700">
                             <thead className="text-xs text-gray-800 uppercase bg-gray-100 sticky top-0">
                                 <tr>
-                                    <th scope="col" className="px-4 py-3 font-semibold">Riga Excel</th>
-                                    <th scope="col" className="px-4 py-3 font-semibold">Segmenti Originali</th>
-                                    <th scope="col" className="px-4 py-3 font-semibold">Descrizione A3</th>
-                                    <th scope="col" className="px-4 py-3 font-semibold w-1/4">Codice Articolo Corretto (6 o 8 caratteri)</th>
+                                    <th scope="col" className="px-4 py-3 font-semibold">{t.excelRow}</th>
+                                    <th scope="col" className="px-4 py-3 font-semibold">{t.originalSegments}</th>
+                                    <th scope="col" className="px-4 py-3 font-semibold">{t.a3Desc}</th>
+                                    <th scope="col" className="px-4 py-3 font-semibold w-1/4">{t.correctCode}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -75,13 +76,13 @@ export const Reconciliation: React.FC<ReconciliationProps> = ({ rows, onConfirm,
                         onClick={onCancel}
                         className="px-6 py-2 bg-white text-gray-800 font-semibold rounded-lg border border-gray-300 hover:bg-gray-100 transition-colors"
                     >
-                        Annulla e Ignora Righe
+                        {t.cancelIgnore}
                     </button>
                     <button
                         onClick={handleSubmit}
                         className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors"
                     >
-                        Conferma Correzioni e Procedi
+                        {t.confirmProceed}
                     </button>
                 </footer>
             </div>

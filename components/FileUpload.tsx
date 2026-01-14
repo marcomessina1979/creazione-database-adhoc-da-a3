@@ -1,24 +1,26 @@
-
 import React, { useState, useCallback } from 'react';
 import { Spinner } from './Spinner';
+import { translations, Language } from '../translations';
 
 interface FileUploadProps {
   id: string;
   onFileSelect: (file: File | null) => void;
   acceptedFileType: string;
+  language: Language;
 }
 
-export const FileUpload: React.FC<FileUploadProps> = ({ id, onFileSelect, acceptedFileType }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({ id, onFileSelect, acceptedFileType, language }) => {
   const [fileName, setFileName] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+
+  const t = translations[language];
 
   const handleFileChange = (files: FileList | null) => {
     if (files && files.length > 0) {
       const file = files[0];
       setFileName(file.name);
       setIsUploading(true);
-      // Simulate processing for better UX, prevents UI lag perception on large files
       setTimeout(() => {
         onFileSelect(file);
         setIsUploading(false);
@@ -66,7 +68,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ id, onFileSelect, accept
         {isUploading ? (
             <div className="flex flex-col items-center text-blue-600">
               <Spinner />
-              <span className="font-medium mt-2">Caricamento...</span>
+              <span className="font-medium mt-2">{t.uploading}</span>
             </div>
         ) : (
             <div className="text-center">
@@ -75,7 +77,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ id, onFileSelect, accept
                       <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                   </svg>
                   <span className="font-medium text-gray-600 text-sm">
-                      {fileName ? <span className="break-all font-semibold text-blue-800">{fileName}</span> : <>Trascina o <span className="text-blue-600 underline">cerca</span> un file</>}
+                      {fileName ? <span className="break-all font-semibold text-blue-800">{fileName}</span> : <>{t.dropOrBrowse}</>}
                   </span>
               </div>
             </div>

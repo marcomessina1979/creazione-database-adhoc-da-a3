@@ -1,4 +1,5 @@
 import type { ProcessResult, TextValueInfo, MissingValueInfo, DescriptionMismatchInfo, SkippedRowInfo, UnreconciledRow, FlaggedRowInfo } from '../types';
+import { translations, Language } from '../translations';
 
 declare const XLSX: any; // Using XLSX from a CDN script
 
@@ -168,7 +169,9 @@ export const processFiles = async (
   a3File: File, 
   dbFile: File,
   corrections?: Map<number, string>,
-  commessa?: string
+  commessa?: string,
+  numeroOrdine?: string,
+  language: Language = 'it'
 ): Promise<ProcessResult> => {
   const [a3Buffer, dbBuffer] = await Promise.all([readFileAsArrayBuffer(a3File), readFileAsArrayBuffer(dbFile)]);
   const a3Wb = XLSX.read(a3Buffer, { type: 'array', cellStyles: true });
@@ -189,6 +192,7 @@ export const processFiles = async (
       if(code && !dbMap.has(code)) dbMap.set(code, dbData[i]);
   }
 
+  // "Numero Ordine" column removed from output
   const outputAoa: any[][] = [['Articolo', 'Descrizione', 'Descrizione supp', 'QUANTITA', 'Prezzo', 'Sconto', 'Prezzo Totale', 'Commessa']];
   const foundCodes: string[] = [];
   const notFound: string[] = [];
@@ -201,7 +205,6 @@ export const processFiles = async (
     const row = a3Data[i];
     if (!row || row.length === 0) continue;
 
-    // Strikethrough check
     const keyIndices = [a3Cols.l1, a3Cols.l2, a3Cols.l3, a3Cols.l4, a3Cols.description];
     let isStruck = false;
     for (const c of keyIndices) {
@@ -229,7 +232,7 @@ export const processFiles = async (
     const dbDesc = String(dbRow[dbDescIdx] || '').trim();
 
     let priceFlag = 'NORMAL';
-    let qty = qtyParsed;
+    let qty = qtyParsed || 1;
     let listPrice = uPrice;
     let discount = 0;
 
@@ -259,19 +262,20 @@ export const processFiles = async (
     const qtyCell = `D${excelRowIndex}`;
     const priceCell = `E${excelRowIndex}`;
     const discCell = `F${excelRowIndex}`;
-    const totalFormula = `ROUND(${qtyCell}*${priceCell}*(1+IF(ISBLANK(${discCell}),0,${discCell})/100),2)`;
+    
+    const totalFormula = `ROUND((${qtyCell}*${priceCell})*(1+IF(ISBLANK(${discCell}),0,${discCell})/100),2)`;
+    const calculatedTotal = Number((qty * listPrice * (1 + discount / 100)).toFixed(2));
 
     outputAoa.push([
         dbRow[dbCodeIdx], dbDesc, suppParts.join(' | ') || null,
         qty, listPrice, discount !== 0 ? discount : null,
-        { f: totalFormula }, commessa || null
+        { f: totalFormula, v: calculatedTotal, t: 'n' }, commessa || null
     ]);
     foundCodes.push(code);
   }
 
   const newWs = XLSX.utils.aoa_to_sheet(outputAoa);
   
-  // EXPLICIT CELL FORMATTING - FORCING NO "General" FORMAT
   const range = XLSX.utils.decode_range(newWs['!ref']!);
   for (let R = range.s.r; R <= range.e.r; ++R) {
     for (let C = range.s.c; C <= range.e.c; ++C) {
@@ -280,29 +284,22 @@ export const processFiles = async (
       if (!cell) continue;
 
       if (R === 0) {
-          // Headers are always Text (@)
           cell.t = 's';
           cell.z = '@';
       } else {
-          // Columns mapping:
-          // 0: Articolo (Text), 1: Descrizione (Text), 2: Descriz Supp (Text), 7: Commessa (Text)
-          // 3: Quantità (Number), 4: Prezzo (Number), 5: Sconto (Number), 6: Totale (Number)
           const isText = [0, 1, 2, 7].includes(C);
           if (isText) {
               cell.t = 's';
               cell.z = '@';
-              // Ensure the value is treated as string
               if (cell.v !== null && cell.v !== undefined) {
                   cell.v = String(cell.v);
               }
           } else {
               cell.t = 'n';
-              // Set explicit format: '0' for Quantity, '0.00' for prices/discounts
               cell.z = (C === 3) ? '0' : '0.00';
-              
-              // Ensure the internal value is a valid JavaScript Number for SheetJS
               if (cell.f) {
-                // Formula cells keep their formula, type is already 'n'
+                cell.t = 'n';
+                if (cell.v === undefined) cell.v = 0;
               } else if (typeof cell.v !== 'number') {
                   const rawVal = String(cell.v || '0').replace(',', '.');
                   const parsed = parseFloat(rawVal);
@@ -314,12 +311,11 @@ export const processFiles = async (
   }
 
   const newWb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(newWb, newWs, "Database_AdHoc");
+  XLSX.utils.book_append_sheet(newWb, newWs, "Foglio1");
   
-  // Use XLSX.write with 'xls' bookType to generate a real BIFF8 binary file (Excel 97-2003)
   const buffer = XLSX.write(newWb, { 
       type: 'array', 
-      bookType: 'xls', // BINARY EXCEL 97-2003 (BIFF8)
+      bookType: 'xls',
       cellDates: true,
       cellStyles: true 
   });
@@ -338,15 +334,8 @@ export const processFiles = async (
       lumpsum_rows: lumpsumRows,
       included_rows: includedRows,
       fallback_mode: 'disabled',
-      assunzioni: [
-        "Formato File: Esportazione in formato Microsoft Excel 97–2003 binario (.xls, BIFF8).",
-        "Eliminazione formato 'Generale': Ogni cella del file di output è ora forzata esplicitamente su 'Testo' o 'Numero'.",
-        "Formato Numero Intero: Applicato alla colonna 'QUANTITA' (es. 14260).",
-        "Formato Numero Decimale: Applicato alle colonne 'Prezzo', 'Sconto' e 'Prezzo Totale' (es. 0.00).",
-        "Formato Testo: Applicato a 'Articolo', 'Descrizione', 'Descrizione supp' e 'Commessa'.",
-        "Calcolo con Formule: La colonna 'Prezzo Totale' contiene formule Excel attive compatibili con Excel 2003."
-      ],
-      output_file: "Database_AdHoc.xls"
+      assunzioni: translations[language].assumptionsList,
+      output_file: `${commessa || 'COMMESSA'}-${numeroOrdine || 'ORDINE'}-A3.xls`
     },
     updatedFileBuffer: new Uint8Array(buffer)
   };
